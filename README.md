@@ -1,11 +1,10 @@
 *run code:
 
-python -m venv venv 
+python3 -m venv venv 
 
 source venv/bin/activate
 
 *pip:
 
-pip install openpyxl, selenium
-
+pip install openpyxl && pip install openpyxl selenium
 pip list
