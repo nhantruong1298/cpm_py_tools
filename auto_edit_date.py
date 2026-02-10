@@ -3,6 +3,18 @@ from selenium.webdriver.common.by import By
 import time
 from typing import Dict, Any
 from openpyxl import load_workbook
+from dotenv import load_dotenv
+import os
+
+
+def get_login_credentials() -> tuple[str, str]:
+    username = os.getenv("LOGIN_USERNAME", "").strip()
+    password = os.getenv("LOGIN_PASSWORD", "").strip()
+
+    if not username or not password:
+        raise ValueError("Thiếu LOGIN_USERNAME hoặc LOGIN_PASSWORD trong file .env")
+
+    return username, password
 
 
 def login(driver, username_value, password_value):
@@ -95,8 +107,12 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
         sheet = workbook.active
 
         for row in sheet.iter_rows(min_row=1):
-            url_cell = row[0].value
-            string_cell = row[1].value
+            url_cell = (
+                row[0].hyperlink.display
+                if row[0].hyperlink and row[0].hyperlink.display
+                else row[0].value
+            )
+            string_cell = row[1].value.replace("'", "")
 
             if url_cell and isinstance(url_cell, str):
                 if url_cell.startswith('=HYPERLINK("') and url_cell.endswith('")'):
@@ -120,6 +136,7 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
 
 # Code execution starts here
 def runAutoEditDate():
+    load_dotenv()
     data = read_excel_to_map_with_hyperlinks("/Users/nhan.tt/Desktop/Book1.xlsx")
 
     driver = webdriver.Chrome()
@@ -127,6 +144,8 @@ def runAutoEditDate():
     count = 0
     error_count = 0
     error_list = []  # Danh sách lưu các URL bị lỗi
+
+    username, password = get_login_credentials()
 
     for url, dateFromExcel in data.items():
         try:
@@ -138,7 +157,8 @@ def runAutoEditDate():
                     driver.find_element(By.NAME, "username")
                     driver.find_element(By.NAME, "password")
 
-                    login(driver, "HCM04651", "cpm3711")
+                    login(driver, username, password)
+
                     time.sleep(2)
                     logged_in = True
 
@@ -153,10 +173,15 @@ def runAutoEditDate():
             replace_date(driver, "time_checkout", dateFromExcel)
             replace_date(driver, "time_upload", dateFromExcel)
 
-            time.sleep(0.25)
+            time.sleep(0.5)
             save_date(driver)
 
             # select_note_and_fill_and_save(driver, "PA")
+
+            # select_note_and_fill_and_save(driver, "Phước")
+
+            select_note_and_fill_and_save(driver, "Khắc Huy")
+
             time.sleep(0.5)
 
             count += 1
