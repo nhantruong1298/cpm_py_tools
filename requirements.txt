@@ -1,0 +1,6 @@
+python-dotenv
+pyautogui
+pyperclip
+Pillow
+selenium
+openpyxl

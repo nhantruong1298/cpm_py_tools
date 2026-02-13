@@ -1,10 +1,9 @@
 \*run code:
 
-python3 -m venv venv
+python3 -m venv venv && source venv/bin/activate
 
-source venv/bin/activate
+pip install -r requirements.txt
+
+pip list
 
 \*pip:
-
-pip install openpyxl && pip install openpyxl selenium && pip install pillow && pip install python-dotenv
-pip list

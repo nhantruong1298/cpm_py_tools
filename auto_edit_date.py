@@ -3,30 +3,7 @@ from selenium.webdriver.common.by import By
 import time
 from typing import Dict, Any
 from openpyxl import load_workbook
-from dotenv import load_dotenv
-import os
-
-
-def get_login_credentials() -> tuple[str, str]:
-    username = os.getenv("LOGIN_USERNAME", "").strip()
-    password = os.getenv("LOGIN_PASSWORD", "").strip()
-
-    if not username or not password:
-        raise ValueError("Thiếu LOGIN_USERNAME hoặc LOGIN_PASSWORD trong file .env")
-
-    return username, password
-
-
-def login(driver, username_value, password_value):
-    """Login to the website with provided credentials"""
-    username = driver.find_element(By.NAME, "username")
-    username.send_keys(username_value)
-
-    password = driver.find_element(By.NAME, "password")
-    password.send_keys(password_value)
-
-    driver.find_element(By.XPATH, "//button[text()='Đăng nhập']").click()
-    time.sleep(1)
+from common import get_login_credentials, login
 
 
 def select_date(driver, plan, date):
@@ -108,11 +85,11 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
 
         for row in sheet.iter_rows(min_row=1):
             url_cell = (
-                row[0].hyperlink.display
-                if row[0].hyperlink and row[0].hyperlink.display
-                else row[0].value
+                row[1].hyperlink.display
+                if row[1].hyperlink and row[1].hyperlink.display
+                else row[1].value
             )
-            string_cell = row[1].value.replace("'", "")
+            string_cell = row[2].value.replace("'", "")
 
             if url_cell and isinstance(url_cell, str):
                 if url_cell.startswith('=HYPERLINK("') and url_cell.endswith('")'):
@@ -134,10 +111,8 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
     return data_map
 
 
-# Code execution starts here
-def runAutoEditDate():
-    load_dotenv()
-    data = read_excel_to_map_with_hyperlinks("/Users/nhan.tt/Desktop/Book1.xlsx")
+def run_auto_edit_date(base_path: str):
+    data = read_excel_to_map_with_hyperlinks(base_path + "Book1.xlsx")
 
     driver = webdriver.Chrome()
     logged_in = False
@@ -145,18 +120,15 @@ def runAutoEditDate():
     error_count = 0
     error_list = []  # Danh sách lưu các URL bị lỗi
 
+    # Kiểm tra thông tin cẩn thận
     username, password = get_login_credentials()
 
     for url, dateFromExcel in data.items():
         try:
             driver.get(url)
-
-            # Chỉ login một lần duy nhất
+            time.sleep(.5)
             if not logged_in:
                 try:
-                    driver.find_element(By.NAME, "username")
-                    driver.find_element(By.NAME, "password")
-
                     login(driver, username, password)
 
                     time.sleep(2)
@@ -176,10 +148,7 @@ def runAutoEditDate():
             time.sleep(0.5)
             save_date(driver)
 
-            # select_note_and_fill_and_save(driver, "PA")
-
-            # select_note_and_fill_and_save(driver, "Phước")
-
+            # PA , Phước , Khắc Huy
             select_note_and_fill_and_save(driver, "Khắc Huy")
 
             time.sleep(0.5)

@@ -1,7 +1,6 @@
-from asyncio import wait
 import zipfile
 import os
-from pathlib import Path
+import shutil
 from openpyxl import load_workbook
 from typing import List
 from selenium.webdriver.support import expected_conditions as EC
@@ -10,42 +9,27 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from PIL import Image
-from dotenv import load_dotenv
+import pyautogui
+import pyperclip
+from common import get_login_credentials, login
 
 
-def runAutoCutImage():
-    load_dotenv()
-    basePath = "/Users/nhan.tt/Downloads/"
-
-    urls = get_urls_from_excel(basePath + "Book1.xlsx")
-    downloadImage(urls)
-    time.sleep(1)
-
-    # extractAll(basePath)
-    # time.sleep(1)
-
-    # crop_jpg_images_in_image_folders(basePath)
-    # time.sleep(1)
-
-    # clearImages(urls)
-    # time.sleep(1)
-
-    return
-
-
-def clearImages(urls: List[str]):
+def run_auto_cut_image(base_path: str):
     driver = webdriver.Chrome()
-    logged_in = False
+
+    urls = get_urls_from_excel(base_path + "Book1.xlsx")
+
     username, password = get_login_credentials()
+    logged_in = False
+
     for index, url in enumerate(urls):
+        print(f"** Row index: {index+1}, URL to process: {url} **")
         try:
             driver.get(url)
+            time.sleep(2)
 
             if not logged_in:
                 try:
-                    driver.find_element(By.NAME, "username")
-                    driver.find_element(By.NAME, "password")
-
                     login(driver, username, password)
 
                     time.sleep(2)
@@ -58,33 +42,142 @@ def clearImages(urls: List[str]):
                     logged_in = True
                     pass
 
-            elements = driver.find_elements(By.CSS_SELECTOR, "a.del-img")
-            count = len(elements)
+            download_images_from(driver)
+            time.sleep(3)
 
-            if count == 0:
-                continue
+            extract_all_images_from(base_path)
+            time.sleep(2)
 
-            # Scroll to the target section
-            target_element = driver.find_element(
-                By.XPATH, "//h3[contains(text(), 'Hình ảnh cửa hàng')]"
-            )
-            driver.execute_script("arguments[0].scrollIntoView(true);", target_element)
-            time.sleep(1)
+            crop_jpg_images_in_image_folder_from(base_path)
+            time.sleep(2)
 
-            driver.execute_script(
-                "document.querySelectorAll('a.del-img').forEach(el => el.click());"
-            )
+            clear_images_from(url, driver)
+            time.sleep(2)
 
-            print(f"Đã xóa {count} ảnh, index: {index}, URL: {url}")
+            send_images_to(driver, base_path)
+            time.sleep(2)
+
+            clean_base_path(base_path)
             time.sleep(2)
 
         except Exception as e:
-            print(f"Lỗi khi xóa ảnh từ {url}: {e} - URL index: {index}")
+            print(f"Lỗi khi xử lý url tại hàng {index+1}: {e}")
+            clean_base_path(base_path)
+            logged_in = False
+            time.sleep(2)
+            continue
     driver.quit()
     return
 
 
-def crop_jpg_images_in_image_folders(base_path: str, top_ratio: float = 0.5):
+def send_images_to(driver: webdriver.Chrome, base_path: str):
+    try:
+        btn = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (
+                    By.XPATH,
+                    "//button[contains(@onclick,'initUpload') and contains(@onclick,'plan_image_audit') and contains(@onclick,'type_image=image_audit')]",
+                )
+            )
+        )
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+        time.sleep(1)
+        try:
+            btn.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", btn)
+
+        time.sleep(2)
+        file_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "image-dropzone"))
+        )
+
+        # Select dropdown image_type_id và chọn Overview (value="2")
+        image_type_select = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "image_type_id"))
+        )
+        driver.execute_script("arguments[0].value = '2';", image_type_select)
+        time.sleep(1)
+
+        file_input.click()
+
+        time.sleep(2)
+
+        image_folder = find_first_image_folder(base_path)
+        path_to_file = image_folder
+
+        if not path_to_file:
+            print(f"Không tìm thấy thư mục chứa ảnh trong: {base_path}")
+            return
+
+        pyautogui.hotkey("command", "shift", "g")
+        time.sleep(1)
+
+        # Dùng clipboard để paste đường dẫn (tránh trigger shortcuts)
+        pyperclip.copy(path_to_file)
+        time.sleep(1)
+        pyautogui.hotkey("command", "v")
+        time.sleep(1)
+
+        # Nhấn Enter để đi vào folder
+        pyautogui.press("enter")
+        time.sleep(1.5)
+
+        # Chọn tất cả file trong folder
+        pyautogui.hotkey("command", "a")
+        time.sleep(1)
+
+        # Nhấn Enter để upload/open
+        pyautogui.press("enter")
+        time.sleep(2)
+
+        print(f"Đã gửi ảnh")
+    except Exception as e:
+        print(f"Lỗi khi gửi ảnh")
+    return
+
+
+def find_first_image_folder(base_path: str) -> str | None:
+    if not os.path.isdir(base_path):
+        return None
+
+    for root, dirs, files in os.walk(base_path):
+        folder_name = os.path.basename(root).lower()
+        if "image" in folder_name:
+            return root
+
+    return None
+
+
+def clear_images_from(url: str, driver: webdriver.Chrome):
+    try:
+        elements = driver.find_elements(By.CSS_SELECTOR, "a.del-img")
+        count = len(elements)
+
+        if count == 0:
+            print(f"Không có ảnh để xóa tại URL: {url}")
+            return
+
+        # Scroll to the target section
+        target_element = driver.find_element(
+            By.XPATH, "//h3[contains(text(), 'Hình ảnh cửa hàng')]"
+        )
+        driver.execute_script("arguments[0].scrollIntoView(true);", target_element)
+        time.sleep(1)
+
+        driver.execute_script(
+            "document.querySelectorAll('a.del-img').forEach(el => el.click());"
+        )
+
+        print(f"Đã xóa {count} ảnh")
+        time.sleep(2)
+
+    except Exception as e:
+        print(f"Lỗi khi xóa ảnh từ {url}: {e}")
+    return
+
+
+def crop_jpg_images_in_image_folder_from(base_path: str, top_ratio: float = 0.1):
     if not os.path.isdir(base_path):
         print(f"Base path không tồn tại: {base_path}")
         return
@@ -112,61 +205,31 @@ def crop_jpg_images_in_image_folders(base_path: str, top_ratio: float = 0.5):
                     cropped.save(file_path)
             except Exception as e:
                 print(f"Lỗi khi cắt ảnh: {file_path} - {e}")
-    print("Đã cắt xong tất cả ảnh trong các thư mục chứa 'images'")
+    print("Đã cắt xong tất cả ảnh")
     return
 
 
-def extractAll(path: str):
-    for fileName in os.listdir(path):
+def extract_all_images_from(basePath: str):
+    for fileName in os.listdir(basePath):
         if fileName.endswith(".zip"):
-            filePath = os.path.join(path, fileName)
+            filePath = os.path.join(basePath, fileName)
             with zipfile.ZipFile(filePath, "r") as zip_ref:
-                extract_path = os.path.join(path, fileName[:-4])
+                extract_path = os.path.join(basePath, fileName[:-4])
                 zip_ref.extractall(extract_path)
-        print("Đã giải nén tất cả file zip")
+    print("Đã giải nén tất cả file zip")
     return
 
 
-def downloadImage(urls: List[str]):
-    driver = webdriver.Chrome()
-    logged_in = False
-    username, password = get_login_credentials()
-    for index, url in enumerate(urls):
-        try:
-            driver.get(url)
+def download_images_from(driver: webdriver.Chrome):
+    download_button_xpath = "//a[contains(., 'Tải hình ảnh')]"
 
-            if not logged_in:
-                try:
-                    driver.find_element(By.NAME, "username")
-                    driver.find_element(By.NAME, "password")
+    button = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, download_button_xpath))
+    )
 
-                    # PA account
-                    login(driver, username, password)
-
-                    time.sleep(2)
-                    logged_in = True
-
-                    driver.get(url)
-                    print("Đã login thành công")
-                except:
-                    print("Không cần login")
-                    logged_in = True
-                    pass
-
-            download_button_xpath = "//a[contains(., 'Tải hình ảnh')]"
-
-            button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, download_button_xpath))
-            )
-
-            print("Đang click nút tải hình ảnh... URL index:", index)
-            button.click()
-            time.sleep(3)
-
-        except Exception as e:
-            print(f"Lỗi khi tải ảnh từ {url}: {e} - URL index: {index}")
-
-    driver.quit()
+    button.click()
+    print("Đã click vào nút tải hình ảnh")
+    return
 
 
 def get_urls_from_excel(file_path: str) -> List[str]:
@@ -215,23 +278,19 @@ def get_urls_from_excel(file_path: str) -> List[str]:
     return urls
 
 
-def get_login_credentials() -> tuple[str, str]:
-    username = os.getenv("LOGIN_USERNAME", "").strip()
-    password = os.getenv("LOGIN_PASSWORD", "").strip()
+def clean_base_path(base_path: str):
+    """Xóa tất cả folders và files trong base_path, chỉ giữ lại file .xlsx"""
+    if not os.path.isdir(base_path):
+        print(f"Base path không tồn tại: {base_path}")
+        return
 
-    if not username or not password:
-        raise ValueError("Thiếu LOGIN_USERNAME hoặc LOGIN_PASSWORD trong file .env")
+    for item in os.listdir(base_path):
+        item_path = os.path.join(base_path, item)
 
-    return username, password
+        if os.path.isdir(item_path):
+            shutil.rmtree(item_path)
+        elif os.path.isfile(item_path) and not item.endswith(".xlsx"):
+            os.remove(item_path)
 
-
-def login(driver, username_value, password_value):
-    """Login to the website with provided credentials"""
-    username = driver.find_element(By.NAME, "username")
-    username.send_keys(username_value)
-
-    password = driver.find_element(By.NAME, "password")
-    password.send_keys(password_value)
-
-    driver.find_element(By.XPATH, "//button[text()='Đăng nhập']").click()
-    time.sleep(1)
+    print(f"Đã dọn dẹp xong")
+    return
