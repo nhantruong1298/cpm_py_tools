@@ -4,3 +4,4 @@ pyperclip
 Pillow
 selenium
 openpyxl
+opencv-python

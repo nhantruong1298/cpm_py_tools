@@ -12,6 +12,7 @@ from PIL import Image
 import pyautogui
 import pyperclip
 from common import get_login_credentials, login
+from smart_crop_text import smart_crop_text
 
 
 def run_auto_cut_image(base_path: str):
@@ -177,7 +178,7 @@ def clear_images_from(url: str, driver: webdriver.Chrome):
     return
 
 
-def crop_jpg_images_in_image_folder_from(base_path: str, top_ratio: float = 0.1):
+def crop_jpg_images_in_image_folder_from(base_path: str, crop_ratio: float = 0.125):
     if not os.path.isdir(base_path):
         print(f"Base path không tồn tại: {base_path}")
         return
@@ -193,16 +194,20 @@ def crop_jpg_images_in_image_folder_from(base_path: str, top_ratio: float = 0.1)
 
             file_path = os.path.join(root, file_name)
             try:
-                with Image.open(file_path) as img:
-                    width, height = img.size
-                    if height <= 1:
-                        continue
+                # Cách cũ: cắt bằng PIL, nhưng có thể bị lỗi với một số ảnh đặc biệt
+                # with Image.open(file_path) as img:
+                #     width, height = img.size
+                #     if height <= 1:
+                #         continue
 
-                    top = int(height * top_ratio)
-                    cropped = img.crop((0, top, width, height))
-                    if cropped.mode in ("RGBA", "LA", "P"):
-                        cropped = cropped.convert("RGB")
-                    cropped.save(file_path)
+                #     top = int(height * top_ratio)
+                #     cropped = img.crop((0, top, width, height))
+                #     if cropped.mode in ("RGBA", "LA", "P"):
+                #         cropped = cropped.convert("RGB")
+                #     cropped.save(file_path)
+
+                # Cách mới: dùng smart_crop_text để cắt, có thể xử lý tốt hơn với các ảnh đặc biệt
+                smart_crop_text(file_path, crop_ratio)
             except Exception as e:
                 print(f"Lỗi khi cắt ảnh: {file_path} - {e}")
     print("Đã cắt xong tất cả ảnh")
