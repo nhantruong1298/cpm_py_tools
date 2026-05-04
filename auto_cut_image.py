@@ -11,63 +11,66 @@ from selenium.webdriver.support.ui import WebDriverWait
 from PIL import Image
 import pyautogui
 import pyperclip
+import subprocess
 from common import get_login_credentials, login
 from smart_crop_text import smart_crop_text
+from logger import logger
 
 
 def run_auto_cut_image(base_path: str):
     driver = webdriver.Chrome()
+    try:
+        urls = get_urls_from_excel(base_path + "Book1.xlsx")
 
-    urls = get_urls_from_excel(base_path + "Book1.xlsx")
+        username, password = get_login_credentials()
+        logged_in = False
 
-    username, password = get_login_credentials()
-    logged_in = False
+        for index, url in enumerate(urls):
+            logger.info(f"** Row index: {index+1}, URL to process: {url} **")
+            try:
+                driver.get(url)
+                time.sleep(2)
 
-    for index, url in enumerate(urls):
-        print(f"** Row index: {index+1}, URL to process: {url} **")
-        try:
-            driver.get(url)
-            time.sleep(2)
+                if not logged_in:
+                    try:
+                        login(driver, username, password)
 
-            if not logged_in:
-                try:
-                    login(driver, username, password)
+                        time.sleep(2)
+                        logged_in = True
 
-                    time.sleep(2)
-                    logged_in = True
+                        driver.get(url)
+                        logger.info("Đã login thành công")
+                    except:
+                        logger.info("Không cần login")
+                        logged_in = True
+                        pass
 
-                    driver.get(url)
-                    print("Đã login thành công")
-                except:
-                    print("Không cần login")
-                    logged_in = True
-                    pass
+                download_images_from(driver)
+                time.sleep(3)
 
-            download_images_from(driver)
-            time.sleep(3)
+                extract_all_images_from(base_path)
+                time.sleep(2)
 
-            extract_all_images_from(base_path)
-            time.sleep(2)
+                crop_jpg_images_in_image_folder_from(base_path)
+                time.sleep(2)
 
-            crop_jpg_images_in_image_folder_from(base_path)
-            time.sleep(2)
+                clear_images_from(url, driver)
+                time.sleep(2)
 
-            clear_images_from(url, driver)
-            time.sleep(2)
+                send_images_to(driver, base_path)
+                time.sleep(3)
 
-            send_images_to(driver, base_path)
-            time.sleep(2)
+                clean_base_path(base_path)
+                time.sleep(2)
 
-            clean_base_path(base_path)
-            time.sleep(2)
-
-        except Exception as e:
-            print(f"Lỗi khi xử lý url tại hàng {index+1}: {e}")
-            clean_base_path(base_path)
-            logged_in = False
-            time.sleep(2)
-            continue
-    driver.quit()
+            except Exception as e:
+                logger.info(f"Lỗi khi xử lý url tại hàng {index+1}: {e}")
+                clean_base_path(base_path)
+                logged_in = False
+                time.sleep(2)
+                continue
+    finally:
+        driver.quit()
     return
 
 
@@ -100,41 +103,40 @@ def send_images_to(driver: webdriver.Chrome, base_path: str):
         driver.execute_script("arguments[0].value = '2';", image_type_select)
         time.sleep(1)
 
-        file_input.click()
-
-        time.sleep(2)
-
         image_folder = find_first_image_folder(base_path)
         path_to_file = image_folder
 
         if not path_to_file:
-            print(f"Không tìm thấy thư mục chứa ảnh trong: {base_path}")
+            logger.info(f"Không tìm thấy thư mục chứa ảnh trong: {base_path}")
             return
 
-        pyautogui.hotkey("command", "shift", "g")
-        time.sleep(1)
+        # Lấy danh sách tất cả file ảnh trong folder
+        image_files = []
+        for file_name in os.listdir(path_to_file):
+            if file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                full_path = os.path.join(path_to_file, file_name)
+                image_files.append(full_path)
 
-        # Dùng clipboard để paste đường dẫn (tránh trigger shortcuts)
-        pyperclip.copy(path_to_file)
-        time.sleep(1)
-        pyautogui.hotkey("command", "v")
-        time.sleep(1)
+        if not image_files:
+            logger.info(f"Không tìm thấy file ảnh trong: {path_to_file}")
+            return
 
-        # Nhấn Enter để đi vào folder
-        pyautogui.press("enter")
-        time.sleep(1.5)
+        # Dùng Selenium để submit file
+        # Tìm file input element
+        file_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+        
+        if file_inputs:
+            # Gửi danh sách file path tới input element
+            file_input = file_inputs[-1]  # Lấy file input cuối cùng
+            file_input.send_keys('\n'.join(image_files))
+            logger.info(f"Đã gửi {len(image_files)} file ảnh")
+            time.sleep(2)
+        else:
+            logger.warning("Không tìm thấy file input element")
 
-        # Chọn tất cả file trong folder
-        pyautogui.hotkey("command", "a")
-        time.sleep(1)
-
-        # Nhấn Enter để upload/open
-        pyautogui.press("enter")
-        time.sleep(2)
-
-        print(f"Đã gửi ảnh")
+        logger.info(f"Đã gửi ảnh")
     except Exception as e:
-        print(f"Lỗi khi gửi ảnh")
+        logger.info(f"Lỗi khi gửi ảnh")
     return
 
 
@@ -156,7 +158,7 @@ def clear_images_from(url: str, driver: webdriver.Chrome):
         count = len(elements)
 
         if count == 0:
-            print(f"Không có ảnh để xóa tại URL: {url}")
+            logger.info(f"Không có ảnh để xóa tại URL: {url}")
             return
 
         # Scroll to the target section
@@ -170,17 +172,17 @@ def clear_images_from(url: str, driver: webdriver.Chrome):
             "document.querySelectorAll('a.del-img').forEach(el => el.click());"
         )
 
-        print(f"Đã xóa {count} ảnh")
+        logger.info(f"Đã xóa {count} ảnh")
         time.sleep(2)
 
     except Exception as e:
-        print(f"Lỗi khi xóa ảnh từ {url}: {e}")
+        logger.info(f"Lỗi khi xóa ảnh từ {url}: {e}")
     return
 
 
 def crop_jpg_images_in_image_folder_from(base_path: str, crop_ratio: float = 0.125):
     if not os.path.isdir(base_path):
-        print(f"Base path không tồn tại: {base_path}")
+        logger.info(f"Base path không tồn tại: {base_path}")
         return
 
     for root, dirs, files in os.walk(base_path):
@@ -195,22 +197,22 @@ def crop_jpg_images_in_image_folder_from(base_path: str, crop_ratio: float = 0.1
             file_path = os.path.join(root, file_name)
             try:
                 # Cách cũ: cắt bằng PIL, nhưng có thể bị lỗi với một số ảnh đặc biệt
-                # with Image.open(file_path) as img:
-                #     width, height = img.size
-                #     if height <= 1:
-                #         continue
+                with Image.open(file_path) as img:
+                    width, height = img.size
+                    if height <= 1:
+                        continue
 
-                #     top = int(height * top_ratio)
-                #     cropped = img.crop((0, top, width, height))
-                #     if cropped.mode in ("RGBA", "LA", "P"):
-                #         cropped = cropped.convert("RGB")
-                #     cropped.save(file_path)
+                    top = int(height * 0.125)
+                    cropped = img.crop((0, top, width, height))
+                    if cropped.mode in ("RGBA", "LA", "P"):
+                        cropped = cropped.convert("RGB")
+                    cropped.save(file_path)
 
                 # Cách mới: dùng smart_crop_text để cắt, có thể xử lý tốt hơn với các ảnh đặc biệt
-                smart_crop_text(file_path, crop_ratio)
+                # smart_crop_text(file_path, crop_ratio)
             except Exception as e:
-                print(f"Lỗi khi cắt ảnh: {file_path} - {e}")
-    print("Đã cắt xong tất cả ảnh")
+                logger.info(f"Lỗi khi cắt ảnh: {file_path} - {e}")
+    logger.info("Đã cắt xong tất cả ảnh")
     return
 
 
@@ -221,7 +223,7 @@ def extract_all_images_from(basePath: str):
             with zipfile.ZipFile(filePath, "r") as zip_ref:
                 extract_path = os.path.join(basePath, fileName[:-4])
                 zip_ref.extractall(extract_path)
-    print("Đã giải nén tất cả file zip")
+    logger.info("Đã giải nén tất cả file zip")
     return
 
 
@@ -233,7 +235,7 @@ def download_images_from(driver: webdriver.Chrome):
     )
 
     button.click()
-    print("Đã click vào nút tải hình ảnh")
+    logger.info("Đã click vào nút tải hình ảnh")
     return
 
 
@@ -276,9 +278,9 @@ def get_urls_from_excel(file_path: str) -> List[str]:
                     urls.append(clean_url)
 
     except FileNotFoundError:
-        print(f"Lỗi: Không tìm thấy file tại: {file_path}")
+        logger.info(f"Lỗi: Không tìm thấy file tại: {file_path}")
     except Exception as e:
-        print(f"Lỗi khi đọc file Excel: {e}")
+        logger.info(f"Lỗi khi đọc file Excel: {e}")
 
     return urls
 
@@ -286,7 +288,7 @@ def get_urls_from_excel(file_path: str) -> List[str]:
 def clean_base_path(base_path: str):
     """Xóa tất cả folders và files trong base_path, chỉ giữ lại file .xlsx"""
     if not os.path.isdir(base_path):
-        print(f"Base path không tồn tại: {base_path}")
+        logger.info(f"Base path không tồn tại: {base_path}")
         return
 
     for item in os.listdir(base_path):
@@ -297,5 +299,5 @@ def clean_base_path(base_path: str):
         elif os.path.isfile(item_path) and not item.endswith(".xlsx"):
             os.remove(item_path)
 
-    print(f"Đã dọn dẹp xong")
+    logger.info(f"Đã dọn dẹp xong")
     return

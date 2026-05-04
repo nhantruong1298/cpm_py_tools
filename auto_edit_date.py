@@ -4,6 +4,7 @@ import time
 from typing import Dict, Any
 from openpyxl import load_workbook
 from common import get_login_credentials, login
+from logger import logger
 
 
 def select_date(driver, plan, date):
@@ -84,29 +85,43 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
         sheet = workbook.active
 
         for row in sheet.iter_rows(min_row=1):
+            # Check if row has at least 2 columns
+            if len(row) < 2:
+                continue
+            
+            # Use .target to get the actual URL from hyperlink in column A (row[0])
             url_cell = (
-                row[1].hyperlink.display
-                if row[1].hyperlink and row[1].hyperlink.display
-                else row[1].value
+                row[0].value
+                # if row[0].hyperlink and row[0].value
+                # else row[0].value
             )
-            string_cell = row[2].value.replace("'", "")
+            
+            # Get date from column B (row[1])
+            date_cell = row[1].value
+            if not date_cell:
+                continue
+            date_cell = str(date_cell).replace("'", "")
 
             if url_cell and isinstance(url_cell, str):
-                if url_cell.startswith('=HYPERLINK("') and url_cell.endswith('")'):
-                    url_cell = url_cell[12:-2]
+                # Extract URL from =HYPERLINK(url, text) formula
+                if url_cell.startswith('=HYPERLINK('):
+                    start = url_cell.find('(') + 1
+                    end = url_cell.find(',', start)
+                    url_cell = url_cell[start:end].strip().replace('"', '')
+                else:
+                    # Remove quotes if present
+                    url_cell = url_cell.replace('"', "").strip()
 
-            url_parts = url_cell.split(",")
-            if url_parts[0].strip().startswith("https://") and "-" in string_cell:
-                data_map[url_parts[0].replace('"', "").strip()] = string_cell.replace(
-                    '"', ""
-                ).strip()
+            url_parts = [url_cell] if url_cell else []
+            if url_parts and url_parts[0] and url_parts[0].startswith("https://"):
+                data_map[url_parts[0]] = date_cell.strip()
             else:
                 continue
 
     except FileNotFoundError:
-        print(f"Lỗi: Không tìm thấy file tại đường dẫn: {file_path}")
+        logger.info(f"Lỗi: Không tìm thấy file tại đường dẫn: {file_path}")
     except Exception as e:
-        print(f"Lỗi xảy ra khi đọc file Excel: {e}")
+        logger.info(f"Lỗi xảy ra khi đọc file Excel: {e}")
 
     return data_map
 
@@ -115,91 +130,93 @@ def run_auto_edit_date(base_path: str):
     data = read_excel_to_map_with_hyperlinks(base_path + "Book1.xlsx")
 
     driver = webdriver.Chrome()
-    logged_in = False
-    count = 0
-    error_count = 0
-    error_list = []  # Danh sách lưu các URL bị lỗi
+    try:
+        logged_in = False
+        count = 0
+        error_count = 0
+        error_list = []  # Danh sách lưu các URL bị lỗi
 
-    # Kiểm tra thông tin cẩn thận
-    username, password = get_login_credentials()
+        # Kiểm tra thông tin cẩn thận
+        username, password = get_login_credentials()
 
-    for url, dateFromExcel in data.items():
-        try:
-            driver.get(url)
-            time.sleep(.5)
-            if not logged_in:
-                try:
-                    login(driver, username, password)
+        for url, dateFromExcel in data.items():
+            try:
+                driver.get(url)
+                time.sleep(.5)
+                if not logged_in:
+                    try:
+                        login(driver, username, password)
 
-                    time.sleep(2)
-                    logged_in = True
+                        time.sleep(2)
+                        logged_in = True
 
-                    driver.get(url)
-                    print("Đã login thành công")
-                except:
-                    print("Không cần login")
-                    logged_in = True
-                    pass
+                        driver.get(url)
+                        logger.info("Đã login thành công")
+                    except:
+                        logger.info("Không cần login")
+                        logged_in = True
+                        pass
 
-            replace_date(driver, "time_checkin", dateFromExcel)
-            replace_date(driver, "time_checkout", dateFromExcel)
-            replace_date(driver, "time_upload", dateFromExcel)
+                replace_date(driver, "time_checkin", dateFromExcel)
+                replace_date(driver, "time_checkout", dateFromExcel)
+                replace_date(driver, "time_upload", dateFromExcel)
 
-            time.sleep(0.5)
-            save_date(driver)
+                time.sleep(0.5)
+                save_date(driver)
 
-            # PA , Phước , Khắc Huy
-            select_note_and_fill_and_save(driver, "Khắc Huy")
+                # PA , Phước , Khắc Huy
+                select_note_and_fill_and_save(driver, "PA")
 
-            time.sleep(0.5)
+                time.sleep(0.5)
 
-            count += 1
-            print(f"Đã xử lý {count} URL")
+                count += 1
+                logger.info(f"Đã xử lý {count} URL")
 
-        except Exception as e:
-            error_count += 1
-            error_info = {"URL": url, "Ngày": dateFromExcel, "Lỗi": str(e)}
-            error_list.append(error_info)
-            print(f"❌ Lỗi tại URL: {url}")
-            print(f"   Lỗi: {str(e)}")
-            print(f"   Tổng số lỗi: {error_count}")
-            continue
-    # Xuất danh sách lỗi ra file Excel
-    if error_list:
-        output_file = "/Users/nhan.tt/Desktop/Error_Report.xlsx"
-        try:
-            from openpyxl import Workbook
+            except Exception as e:
+                error_count += 1
+                error_info = {"URL": url, "Ngày": dateFromExcel, "Lỗi": str(e)}
+                error_list.append(error_info)
+                logger.info(f"❌ Lỗi tại URL: {url}")
+                logger.info(f"   Lỗi: {str(e)}")
+                logger.info(f"   Tổng số lỗi: {error_count}")
+                continue
+        # Xuất danh sách lỗi ra file Excel
+        if error_list:
+            output_file = "/Users/nhantruong/Desktop/Error_Report.xlsx"
+            try:
+                from openpyxl import Workbook
 
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Danh sách lỗi"
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Danh sách lỗi"
 
-            # Header
-            ws["A1"] = "URL"
-            ws["B1"] = "Ngày"
-            ws["C1"] = "Lỗi"
+                # Header
+                ws["A1"] = "URL"
+                ws["B1"] = "Ngày"
+                ws["C1"] = "Lỗi"
 
-            # Dữ liệu
-            for idx, error_info in enumerate(error_list, start=2):
-                ws[f"A{idx}"] = error_info["URL"]
-                ws[f"B{idx}"] = error_info["Ngày"]
-                ws[f"C{idx}"] = error_info["Lỗi"]
+                # Dữ liệu
+                for idx, error_info in enumerate(error_list, start=2):
+                    ws[f"A{idx}"] = error_info["URL"]
+                    ws[f"B{idx}"] = error_info["Ngày"]
+                    ws[f"C{idx}"] = error_info["Lỗi"]
 
-            # Tự động điều chỉnh độ rộng cột
-            ws.column_dimensions["A"].width = 80
-            ws.column_dimensions["B"].width = 15
-            ws.column_dimensions["C"].width = 50
+                # Tự động điều chỉnh độ rộng cột
+                ws.column_dimensions["A"].width = 80
+                ws.column_dimensions["B"].width = 15
+                ws.column_dimensions["C"].width = 50
 
-            wb.save(output_file)
-            print(f"\n📄 Đã xuất danh sách lỗi ra file: {output_file}")
-        except Exception as e:
-            print(f"\n⚠️ Không thể tạo file báo cáo lỗi: {e}")
-    else:
-        print(f"\n✅ Không có lỗi nào để xuất ra file")
+                wb.save(output_file)
+                logger.info(f"\n📄 Đã xuất danh sách lỗi ra file: {output_file}")
+            except Exception as e:
+                logger.info(f"\n⚠️ Không thể tạo file báo cáo lỗi: {e}")
+        else:
+            logger.info(f"\n✅ Không có lỗi nào để xuất ra file")
 
-    print(f"✅ Đã xử lý thành công: {count} URL")
-    print(f"❌ Số lỗi: {error_count} URL")
-    print(f"📊 Tổng cộng: {count + error_count} URL")
+        logger.info(f"✅ Đã xử lý thành công: {count} URL")
+        logger.info(f"❌ Số lỗi: {error_count} URL")
+        logger.info(f"📊 Tổng cộng: {count + error_count} URL")
 
-    time.sleep(5)
-    driver.quit()
+        time.sleep(5)
+    finally:
+        driver.quit()
