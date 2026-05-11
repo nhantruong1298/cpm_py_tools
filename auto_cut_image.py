@@ -29,13 +29,13 @@ def run_auto_cut_image(base_path: str):
             logger.info(f"** Row index: {index+1}, URL to process: {url} **")
             try:
                 driver.get(url)
-                time.sleep(2)
+                time.sleep(2.1)
 
                 if not logged_in:
                     try:
                         login(driver, username, password)
 
-                        time.sleep(2)
+                        time.sleep(2.2)
                         logged_in = True
 
                         driver.get(url)
@@ -46,19 +46,19 @@ def run_auto_cut_image(base_path: str):
                         pass
 
                 download_images_from(driver)
-                time.sleep(3)
+                time.sleep(3.1)
 
                 extract_all_images_from(base_path)
-                time.sleep(2)
+                time.sleep(2.1)
 
                 crop_jpg_images_in_image_folder_from(base_path)
-                time.sleep(2)
+                time.sleep(2.1)
 
                 clear_images_from(url, driver)
-                time.sleep(2)
+                time.sleep(2.3)
 
                 send_images_to(driver, base_path)
-                time.sleep(3)
+                time.sleep(3.1)
 
                 clean_base_path(base_path)
                 time.sleep(2)
@@ -130,7 +130,7 @@ def send_images_to(driver: webdriver.Chrome, base_path: str):
             file_input = file_inputs[-1]  # Lấy file input cuối cùng
             file_input.send_keys('\n'.join(image_files))
             logger.info(f"Đã gửi {len(image_files)} file ảnh")
-            time.sleep(2)
+            time.sleep(3.5)
         else:
             logger.warning("Không tìm thấy file input element")
 

@@ -7,10 +7,10 @@ from logger import logger
 
 load_dotenv()
 
-# Giữ màn hình macOS không tắt và không khóa trong 2 giờ 30p (không cần cắm sạc)
+# Giữ màn hình macOS không tắt và không khóa (~3 giờ cho 180 data)
 # -i: tắt idle sleep
 # -s: tắt display sleep
-os.system('caffeinate -is -t 9000 &')
+os.system('caffeinate -is -t 10800 &')
 
 base_path = "/Users/nhantruong/Downloads/"
 
