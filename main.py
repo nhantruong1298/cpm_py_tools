@@ -1,8 +1,9 @@
 import os
 import time
-from auto_edit_date import run_auto_edit_date, run_auto_sign
-from auto_cut_image import run_auto_cut_image
+# from auto_edit_date import run_auto_edit_date, run_auto_sign
+# from auto_cut_image import run_auto_cut_image
 from dotenv import load_dotenv
+from edit_poster_and_hanger import edit_poster_and_hanger
 from logger import logger
 
 load_dotenv()
@@ -12,7 +13,7 @@ load_dotenv()
 # -s: tắt display sleep
 os.system('caffeinate -is -t 9000 &')
 
-base_path = "/Users/nhantruong/Downloads/"
+base_path = "/Users/nhan.tt/Downloads/"
 
 # logger.info("Bắt đầu chạy auto_cut_image")
 # run_auto_cut_image(base_path)
@@ -21,4 +22,6 @@ base_path = "/Users/nhantruong/Downloads/"
 time.sleep(1) 
 
 # run_auto_edit_date(base_path)
-run_auto_sign(base_path)
+# run_auto_sign(base_path)
+
+edit_poster_and_hanger(base_path)
