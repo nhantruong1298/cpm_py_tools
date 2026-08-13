@@ -126,17 +126,33 @@ def send_images_to(driver: webdriver.Chrome, base_path: str):
         file_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
         
         if file_inputs:
-            # Gửi danh sách file path tới input element
             file_input = file_inputs[-1]  # Lấy file input cuối cùng
-            file_input.send_keys('\n'.join(image_files))
-            logger.info(f"Đã gửi {len(image_files)} file ảnh")
-            time.sleep(3.5)
+            
+            # Focus vào element và clear trước khi gửi
+            driver.execute_script("arguments[0].focus();", file_input)
+            time.sleep(0.5)
+            
+            try:
+                # Gửi danh sách file path - dùng separator \n cho multiple files
+                file_path_string = '\n'.join(image_files)
+                file_input.send_keys(file_path_string)
+                logger.info(f"Đã gửi {len(image_files)} file ảnh: {', '.join([os.path.basename(f) for f in image_files[:3]])}")
+                time.sleep(5)  # Chờ thêm để server xử lý
+            except Exception as send_error:
+                logger.warning(f"Lỗi send_keys: {send_error}")
+                # Nếu gửi batch fail, thử gửi file đầu tiên
+                try:
+                    logger.info(f"Thử lại: gửi file đầu tiên {os.path.basename(image_files[0])}")
+                    file_input.send_keys(image_files[0])
+                    time.sleep(3)
+                except Exception as retry_error:
+                    logger.error(f"Cả batch lẫn single file đều fail: {retry_error}")
         else:
             logger.warning("Không tìm thấy file input element")
 
-        logger.info(f"Đã gửi ảnh")
+        logger.info(f"Hoàn tất gửi ảnh")
     except Exception as e:
-        logger.info(f"Lỗi khi gửi ảnh")
+        logger.error(f"Lỗi khi gửi ảnh: {type(e).__name__}: {e}")
     return
 
 
