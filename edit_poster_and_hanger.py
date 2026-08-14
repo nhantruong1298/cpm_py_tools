@@ -1,12 +1,56 @@
+import random
 import time
+from typing import Dict
+from openpyxl import load_workbook
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from common import get_login_credentials, login
-from auto_cut_image import get_urls_from_excel
 from logger import logger
+
+PLAN_INFO_URL = "https://aws2.cpm-vietnam.com/posm/index.php?route=plan/plan/info&plan_id="
+ALLOWED_POSTER_TYPES = {"Poster 50x70", "Poster 30x40"}
+
+
+def human_sleep(base_seconds: float) -> None:
+    """Sleep một khoảng thời gian ngẫu nhiên quanh base_seconds để giống thao tác của người thật"""
+    time.sleep(base_seconds * random.uniform(1.1, 1.3))
+
+
+def read_plan_ids_and_poster_type(file_path: str) -> Dict[str, str]:
+    """Đọc plan_id (cột A) và loại Poster (cột B), trả về {url: poster_type}"""
+    data_map = {}
+
+    try:
+        workbook = load_workbook(file_path, data_only=True)
+        sheet = workbook.active
+
+        for row in sheet.iter_rows(min_row=1):
+            if len(row) < 2:
+                continue
+
+            plan_id_cell = row[0].value
+            poster_type_cell = row[1].value
+            if not plan_id_cell or not poster_type_cell:
+                continue
+
+            plan_id = str(plan_id_cell).strip()
+            poster_type = str(poster_type_cell).strip()
+            if poster_type not in ALLOWED_POSTER_TYPES:
+                logger.warning(
+                    f"Bỏ qua plan_id {plan_id}: giá trị cột B không hợp lệ '{poster_type}'"
+                )
+                continue
+
+            data_map[PLAN_INFO_URL + plan_id] = poster_type
+
+    except FileNotFoundError:
+        logger.info(f"Lỗi: Không tìm thấy file tại đường dẫn: {file_path}")
+    except Exception as e:
+        logger.info(f"Lỗi xảy ra khi đọc file Excel: {e}")
+
+    return data_map
 
 
 def select_qc_code_khac(driver):
@@ -22,9 +66,9 @@ def select_qc_code_khac(driver):
     driver.execute_script(
         "arguments[0].scrollIntoView({block: 'center'});", dropdown_button
     )
-    time.sleep(0.25)
+    human_sleep(0.25)
     dropdown_button.click()
-    time.sleep(0.5)
+    human_sleep(0.5)
 
     checkbox = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located(
@@ -33,11 +77,11 @@ def select_qc_code_khac(driver):
     )
     if not checkbox.is_selected():
         checkbox.click()
-    time.sleep(0.5)
+    human_sleep(0.5)
 
 
-def select_poster_hanger_and_save(driver):
-    """Cuộn tới câu hỏi 'Poster/Hanger', chọn giá trị 'Poster 50x70' rồi bấm Lưu"""
+def select_poster_hanger_and_save(driver, poster_type: str):
+    """Cuộn tới câu hỏi 'Poster/Hanger', chọn giá trị theo poster_type rồi bấm Lưu"""
     question_row = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located(
             (By.XPATH, "//tr[@data-info='question_id=3002']")
@@ -46,21 +90,21 @@ def select_poster_hanger_and_save(driver):
     driver.execute_script(
         "arguments[0].scrollIntoView({block: 'center'});", question_row
     )
-    time.sleep(0.5)
+    human_sleep(0.5)
 
     chosen_toggle = question_row.find_element(
         By.XPATH,
         ".//div[contains(@class, 'chosen-container')]//a[@class='chosen-single']",
     )
     chosen_toggle.click()
-    time.sleep(0.5)
+    human_sleep(0.5)
 
     option = question_row.find_element(
         By.XPATH,
-        ".//li[contains(@class, 'active-result') and normalize-space(text())='Poster 50x70']",
+        f".//li[contains(@class, 'active-result') and normalize-space(text())='{poster_type}']",
     )
     option.click()
-    time.sleep(0.5)
+    human_sleep(0.5)
 
     save_buttons = question_row.find_elements(
         By.XPATH,
@@ -75,38 +119,48 @@ def select_poster_hanger_and_save(driver):
     driver.execute_script(
         "arguments[0].scrollIntoView({block: 'center'});", save_button
     )
-    time.sleep(0.25)
+    human_sleep(0.25)
     save_button.click()
-    time.sleep(1)
+    human_sleep(1)
 
 
-def body(driver):
+def body(driver, poster_type: str):
     select_qc_code_khac(driver)
-    select_poster_hanger_and_save(driver)
+    select_poster_hanger_and_save(driver, poster_type)
 
 
-def edit_poster_and_hanger(base_path: str):
-    urls = get_urls_from_excel(base_path + "Book1.xlsx")
+def edit_poster_and_hanger(base_path: str, start_from: int = 0):
+    """Chạy xử lý poster/hanger. start_from: số URL đã xử lý ở lần chạy trước,
+    dùng để bỏ qua và chạy tiếp (vd: hôm qua đã xử lý 667 URL thì truyền start_from=667)."""
+    data = read_plan_ids_and_poster_type(base_path + "Book1.xlsx")
+    items = list(data.items())
+    total = len(items)
+
+    if start_from > 0:
+        logger.info(
+            f"⏩ Bỏ qua {start_from} URL đã xử lý trước đó, tiếp tục từ URL số {start_from + 1}/{total}"
+        )
+        items = items[start_from:]
 
     driver = webdriver.Chrome()
     try:
         logged_in = False
-        count = 0
+        count = start_from
         error_count = 0
         error_list = []  # Danh sách lưu các URL bị lỗi
 
         # Kiểm tra thông tin cẩn thận
         username, password = get_login_credentials()
 
-        for url in urls:
+        for url, poster_type in items:
             try:
                 driver.get(url)
-                time.sleep(0.5)
+                human_sleep(0.5)
                 if not logged_in:
                     try:
                         login(driver, username, password)
 
-                        time.sleep(2)
+                        human_sleep(2)
                         logged_in = True
 
                         driver.get(url)
@@ -116,9 +170,9 @@ def edit_poster_and_hanger(base_path: str):
                         logged_in = True
                         pass
 
-                body(driver)
+                body(driver, poster_type)
 
-                time.sleep(0.5)
+                human_sleep(0.5)
 
                 count += 1
                 logger.info(f"Đã xử lý {count} URL")
@@ -166,6 +220,6 @@ def edit_poster_and_hanger(base_path: str):
         logger.info(f"❌ Số lỗi: {error_count} URL")
         logger.info(f"📊 Tổng cộng: {count + error_count} URL")
 
-        time.sleep(5)
+        human_sleep(5)
     finally:
         driver.quit()

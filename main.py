@@ -15,13 +15,17 @@ os.system('caffeinate -is -t 9000 &')
 
 base_path = "/Users/nhan.tt/Downloads/"
 
+# Số URL đã xử lý ở lần chạy trước, dùng để chạy tiếp (bỏ qua các URL đã xử lý)
+# Ví dụ hôm qua đã xử lý 667 URL thì đặt START_FROM = 667
+START_FROM = 667
+
 # logger.info("Bắt đầu chạy auto_cut_image")
 # run_auto_cut_image(base_path)
 
 # Chờ giữa 2 hàm để đảm bảo hệ thống ổn định
-time.sleep(1) 
+# time.sleep(1) 
 
 # run_auto_edit_date(base_path)
 # run_auto_sign(base_path)
 
-edit_poster_and_hanger(base_path)
+edit_poster_and_hanger(base_path, START_FROM)
