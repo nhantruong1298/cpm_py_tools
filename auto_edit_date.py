@@ -45,7 +45,7 @@ def save_date(driver):
     time.sleep(1)
 
 
-def select_note_and_fill_and_save(driver, name):
+def select_note_and_fill_and_save(driver, name,note):
     """Chọn note khác và điền nội dung và lưu"""
     element_to_click = driver.find_element(
         By.XPATH, "//a[@class='chosen-single' and contains(., 'Chọn loại Note')]"
@@ -60,7 +60,7 @@ def select_note_and_fill_and_save(driver, name):
     element_to_click.click()
     time.sleep(0.25)
     driver.find_element(By.ID, "note_comment").send_keys(
-        f"{name} - Chỉnh Ngày + Cắt Hình"
+        f"{name} - {note}"
     )
     time.sleep(0.25)
     save_button = driver.find_element(
@@ -85,11 +85,18 @@ def confirm_sign(driver):
     time.sleep(0.25)
 
 
-def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
+def read_excel_to_map_with_hyperlinks(file_path: str, columns: str = "both") -> Dict[str, Any]:
     """
     Đọc dữ liệu từ file Excel, lấy URL ẩn từ hyperlink ở cột A
     và String hiển thị ở cột B, lưu vào dictionary.
+
+    columns:
+        - "A": chỉ đọc cột A (URL), cột B để rỗng.
+        - "both": đọc cả cột A (URL) và cột B (ngày).
     """
+    if columns not in ("A", "both"):
+        raise ValueError("columns phải là 'A' hoặc 'both'")
+
     data_map = {}
 
     try:
@@ -97,23 +104,17 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
         sheet = workbook.active
 
         for row in sheet.iter_rows(min_row=1):
-            # Check if row has at least 2 columns
-            if len(row) < 1:
-                continue
-            
             # Use .target to get the actual URL from hyperlink in column A (row[0])
-            url_cell = (
-                row[0].value
-                # if row[0].hyperlink and row[0].value
-                # else row[0].value
-            )
-            
-            # Get date from column B (row[1])
-            # date_cell = row[1].value
-            # if not date_cell:
-            #     continue
-            # date_cell = str(date_cell).replace("'", "")
-            date_cell = '2025-12-28'  # Hardcoded date for testing
+            url_cell = row[0].hyperlink.target
+
+            if columns == "both":
+                # Get date from column B (row[1])
+                date_cell = row[1].value if len(row) > 1 else None
+                if not date_cell:
+                    continue
+                date_cell = str(date_cell).replace("'", "")
+            else:
+                date_cell = ""
 
             if url_cell and isinstance(url_cell, str):
                 # Extract URL from =HYPERLINK(url, text) formula
@@ -140,14 +141,13 @@ def read_excel_to_map_with_hyperlinks(file_path: str) -> Dict[str, Any]:
 
 
 def run_auto_edit_date(base_path: str):
-    data = read_excel_to_map_with_hyperlinks(base_path + "Book1.xlsx")
+    data = read_excel_to_map_with_hyperlinks(base_path + "Book1.xlsx","A")
 
     driver = webdriver.Chrome()
     try:
         logged_in = False
         count = 0
         error_count = 0
-        error_list = []  # Danh sách lưu các URL bị lỗi
 
         # Kiểm tra thông tin cẩn thận
         username, password = get_login_credentials()
@@ -178,7 +178,7 @@ def run_auto_edit_date(base_path: str):
                 # save_date(driver)
 
                 # PA , Phước , Khắc Huy
-                select_note_and_fill_and_save(driver, "PA")
+                select_note_and_fill_and_save(driver, "Phương Anh","biên bản")
 
                 time.sleep(0.5)
 
@@ -187,44 +187,9 @@ def run_auto_edit_date(base_path: str):
 
             except Exception as e:
                 error_count += 1
-                error_info = {"URL": url, "Ngày": dateFromExcel, "Lỗi": str(e)}
-                error_list.append(error_info)
-                logger.info(f"❌ Lỗi tại URL: {url}")
-                logger.info(f"   Lỗi: {str(e)}")
-                logger.info(f"   Tổng số lỗi: {error_count}")
+                logger.error(f"❌ Lỗi tại URL: {url} | Ngày: {dateFromExcel} | Lỗi: {e}")
+                logger.error(f"   Tổng số lỗi: {error_count}")
                 continue
-        # Xuất danh sách lỗi ra file Excel
-        if error_list:
-            output_file = "/Users/nhantruong/Desktop/Error_Report.xlsx"
-            try:
-                from openpyxl import Workbook
-
-                wb = Workbook()
-                ws = wb.active
-                ws.title = "Danh sách lỗi"
-
-                # Header
-                ws["A1"] = "URL"
-                ws["B1"] = "Ngày"
-                ws["C1"] = "Lỗi"
-
-                # Dữ liệu
-                for idx, error_info in enumerate(error_list, start=2):
-                    ws[f"A{idx}"] = error_info["URL"]
-                    ws[f"B{idx}"] = error_info["Ngày"]
-                    ws[f"C{idx}"] = error_info["Lỗi"]
-
-                # Tự động điều chỉnh độ rộng cột
-                ws.column_dimensions["A"].width = 80
-                ws.column_dimensions["B"].width = 15
-                ws.column_dimensions["C"].width = 50
-
-                wb.save(output_file)
-                logger.info(f"\n📄 Đã xuất danh sách lỗi ra file: {output_file}")
-            except Exception as e:
-                logger.info(f"\n⚠️ Không thể tạo file báo cáo lỗi: {e}")
-        else:
-            logger.info(f"\n✅ Không có lỗi nào để xuất ra file")
 
         logger.info(f"✅ Đã xử lý thành công: {count} URL")
         logger.info(f"❌ Số lỗi: {error_count} URL")
